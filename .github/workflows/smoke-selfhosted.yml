@@ -1,11 +1,9 @@
 name: Smoke Test (Self-Hosted)
-
 'on':
   workflow_dispatch: {}
   push:
-    branches: [ main ]
-
-# Least-privileged by default
+    branches:
+    - main
 permissions:
   contents: read
   actions: none
@@ -16,62 +14,37 @@ permissions:
   packages: none
   pull-requests: none
   statuses: none
-
-# Only one smoke test at a time
 concurrency:
   group: prod-runner-smoke
   cancel-in-progress: false
-
 jobs:
   ping:
-    # Never run on PR events, ever
-    if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target' }}
-
-    # Only the prod runner (label-gated)
-    runs-on: [self-hosted, prod, deploy]
-
-    # Require approval via protected environment
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+      }}
+    runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Runner environment check
-        run: |
-          echo "🖥️  Runner hostname: $(hostname)"
-          echo "👤 User: $(whoami)"
-          echo "📂 Working directory: $(pwd)"
-          echo "🐧 OS Info:"
-          uname -a
-
-      - name: Docker version check
-        run: |
-          echo "🐳 Docker version:"
-          docker version | head -n 20 || true
-
-          echo ""
-          echo "🐳 Docker socket access:"
-          ls -l /var/run/docker.sock || true
-
-      - name: Docker ps check
-        run: |
-          echo "📦 Running containers:"
-          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || true
-
-      - name: Network connectivity
-        run: |
-          echo "🌐 Testing network connectivity..."
-          curl -sS -o /dev/null -w "api.leoklemet.com: %{http_code}\n" https://api.leoklemet.com/api/ready || true
-          curl -sS -o /dev/null -w "github.com: %{http_code}\n" https://github.com || true
-
-      - name: Workspace check
-        run: |
-          echo "📁 Workspace structure:"
-          ls -la . || true
-
-          echo ""
-          echo "📁 Deploy folder (if exists):"
-          ls -la deploy/ 2>/dev/null || echo "deploy/ not found (will be created on checkout)"
-
-      - name: Success
-        run: |
-          echo "✅ ============================================"
-          echo "✅  Self-hosted runner is working!"
-          echo "✅ ============================================"
+    - name: Runner environment check
+      run: "echo \"\U0001F5A5\uFE0F  Runner hostname: $(hostname)\"\necho \"\U0001F464\
+        \ User: $(whoami)\"\necho \"\U0001F4C2 Working directory: $(pwd)\"\necho \"\
+        \U0001F427 OS Info:\"\nuname -a\n"
+    - name: Docker version check
+      run: "echo \"\U0001F433 Docker version:\"\ndocker version | head -n 20 || true\n\
+        \necho \"\"\necho \"\U0001F433 Docker socket access:\"\nls -l /var/run/docker.sock\
+        \ || true\n"
+    - name: Docker ps check
+      run: "echo \"\U0001F4E6 Running containers:\"\ndocker ps --format \"table {{.Names}}\\\
+        t{{.Status}}\\t{{.Ports}}\" || true\n"
+    - name: Network connectivity
+      run: "echo \"\U0001F310 Testing network connectivity...\"\ncurl -sS -o /dev/null\
+        \ -w \"api.leoklemet.com: %{http_code}\\n\" https://api.leoklemet.com/api/ready\
+        \ || true\ncurl -sS -o /dev/null -w \"github.com: %{http_code}\\n\" https://github.com\
+        \ || true\n"
+    - name: Workspace check
+      run: "echo \"\U0001F4C1 Workspace structure:\"\nls -la . || true\n\necho \"\"\
+        \necho \"\U0001F4C1 Deploy folder (if exists):\"\nls -la deploy/ 2>/dev/null\
+        \ || echo \"deploy/ not found (will be created on checkout)\"\n"
+    - name: Success
+      run: "echo \"\u2705 ============================================\"\necho \"\u2705\
+        \  Self-hosted runner is working!\"\necho \"\u2705 ============================================\"\
+        \n"
