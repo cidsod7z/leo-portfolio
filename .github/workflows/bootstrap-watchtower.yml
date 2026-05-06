@@ -1,54 +1,57 @@
 name: Bootstrap Watchtower on Prod
-
-on:
+'on':
   workflow_dispatch: {}
   push:
-    branches: [ main ]
-
+    branches:
+    - main
 permissions:
   contents: read
-
 concurrency:
   group: prod-deploy
   cancel-in-progress: false
-
 jobs:
   bootstrap:
-    # Never on PRs
-    if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target' }}
-    runs-on: [self-hosted, prod, deploy]
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+      }}
+    runs-on: ubuntu-latest
     environment: production
-
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+    - name: Write deploy/.env.production from Secrets
+      run: 'cd deploy
 
-      - name: Write deploy/.env.production from Secrets
-        run: |
-          cd deploy
-          umask 077
-          cat > .env.production << 'EOF'
-          WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_HTTP_API_TOKEN}
-          FIGMA_PAT=${FIGMA_PAT}
-          FIGMA_TEMPLATE_KEY=${FIGMA_TEMPLATE_KEY}
-          FIGMA_TEAM_ID=${FIGMA_TEAM_ID}
-          EOF
-        env:
-          WATCHTOWER_HTTP_API_TOKEN: ${{ secrets.WATCHTOWER_HTTP_API_TOKEN }}
-          FIGMA_PAT: ${{ secrets.FIGMA_PAT }}
-          FIGMA_TEMPLATE_KEY: ${{ secrets.FIGMA_TEMPLATE_KEY }}
-          FIGMA_TEAM_ID: ${{ secrets.FIGMA_TEAM_ID }}
+        umask 077
 
-      - name: Compose up (watchtower + stack)
-        run: |
-          cd deploy
-          docker compose -f docker-compose.portfolio-prod.yml pull
-          docker compose -f docker-compose.portfolio-prod.yml up -d
-          docker ps
+        cat > .env.production << ''EOF''
 
-      - name: Verify Watchtower HTTP API proxy
-        run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "${{ secrets.WATCHTOWER_UPDATE_URL }}" \
-            -H "Authorization: Bearer ${{ secrets.WATCHTOWER_HTTP_API_TOKEN }}")
-          echo "HTTP $code"
-          test "$code" = "200" -o "$code" = "204"
+        WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_HTTP_API_TOKEN}
+
+        FIGMA_PAT=${FIGMA_PAT}
+
+        FIGMA_TEMPLATE_KEY=${FIGMA_TEMPLATE_KEY}
+
+        FIGMA_TEAM_ID=${FIGMA_TEAM_ID}
+
+        EOF
+
+        '
+      env:
+        WATCHTOWER_HTTP_API_TOKEN: ${{ secrets.WATCHTOWER_HTTP_API_TOKEN }}
+        FIGMA_PAT: ${{ secrets.FIGMA_PAT }}
+        FIGMA_TEMPLATE_KEY: ${{ secrets.FIGMA_TEMPLATE_KEY }}
+        FIGMA_TEAM_ID: ${{ secrets.FIGMA_TEAM_ID }}
+    - name: Compose up (watchtower + stack)
+      run: 'cd deploy
+
+        docker compose -f docker-compose.portfolio-prod.yml pull
+
+        docker compose -f docker-compose.portfolio-prod.yml up -d
+
+        docker ps
+
+        '
+    - name: Verify Watchtower HTTP API proxy
+      run: "code=$(curl -s -o /dev/null -w \"%{http_code}\" \\\n  -X POST \"${{ secrets.WATCHTOWER_UPDATE_URL\
+        \ }}\" \\\n  -H \"Authorization: Bearer ${{ secrets.WATCHTOWER_HTTP_API_TOKEN\
+        \ }}\")\necho \"HTTP $code\"\ntest \"$code\" = \"200\" -o \"$code\" = \"204\"\
+        \n"
