@@ -1,37 +1,26 @@
 name: Redeploy Backend via Watchtower
-
-on:
+'on':
   workflow_dispatch: {}
-
 permissions:
   contents: read
-
 concurrency:
   group: prod-deploy
   cancel-in-progress: false
-
 jobs:
   redeploy:
-    # Manual only; never on PRs
     if: ${{ github.event_name == 'workflow_dispatch' }}
-    runs-on: [self-hosted, prod, deploy]
+    runs-on: ubuntu-latest
     environment: production
-
     steps:
-      - name: Trigger Watchtower HTTP API
-        run: |
-          curl -sS -X POST "${{ secrets.WATCHTOWER_UPDATE_URL }}" \
-            -H "Authorization: Bearer ${{ secrets.WATCHTOWER_HTTP_API_TOKEN }}"
+    - name: Trigger Watchtower HTTP API
+      run: "curl -sS -X POST \"${{ secrets.WATCHTOWER_UPDATE_URL }}\" \\\n  -H \"\
+        Authorization: Bearer ${{ secrets.WATCHTOWER_HTTP_API_TOKEN }}\"\n"
+    - name: Wait for backend health
+      run: "for i in {1..30}; do\n  code=$(curl -s -o /dev/null -w \"%{http_code}\"\
+        \ https://api.leoklemet.com/api/ready)\n  if [ \"$code\" = \"200\" ]; then\
+        \ echo \"healthy\"; exit 0; fi\n  sleep 5\ndone\necho \"Backend not healthy\
+        \ in time\" && exit 1\n"
+    - name: List API paths (sanity)
+      run: 'curl -sS https://api.leoklemet.com/openapi.json | jq ''.paths | keys''
 
-      - name: Wait for backend health
-        run: |
-          for i in {1..30}; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" https://api.leoklemet.com/api/ready)
-            if [ "$code" = "200" ]; then echo "healthy"; exit 0; fi
-            sleep 5
-          done
-          echo "Backend not healthy in time" && exit 1
-
-      - name: List API paths (sanity)
-        run: |
-          curl -sS https://api.leoklemet.com/openapi.json | jq '.paths | keys'
+        '
