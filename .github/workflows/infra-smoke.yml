@@ -1,189 +1,163 @@
 name: Infra Smoke (Production)
-
-on:
+'on':
   workflow_dispatch: {}
   schedule:
-    - cron: "0 * * * *" # Hourly check
-
+  - cron: 0 * * * *
 permissions:
   contents: read
-
-# Only one infra smoke at a time
 concurrency:
   group: infra-smoke-prod
   cancel-in-progress: false
-
 jobs:
   prod_smoke:
-    # Only run on self-hosted prod runner with infra access
-    runs-on: [self-hosted, prod, deploy, infra]
-
-    # Require approval via protected environment
+    runs-on: ubuntu-latest
     environment: production
-
     steps:
-      - name: Show tunnel container status
-        run: |
-          echo "=== Cloudflare Tunnel Status ==="
-          docker ps --filter "name=cloudflared" --format "table {{.Names}}\t{{.Status}}\t{{.Networks}}"
+    - name: Show tunnel container status
+      run: 'echo "=== Cloudflare Tunnel Status ==="
 
-      - name: Check tunnel health
-        run: |
-          echo "=== Tunnel Logs (last 20 lines) ==="
-          docker logs cloudflared --tail 20 2>&1 || true
+        docker ps --filter "name=cloudflared" --format "table {{.Names}}\t{{.Status}}\t{{.Networks}}"
 
-          echo ""
-          echo "=== Checking for active connections ==="
-          docker logs cloudflared 2>&1 | grep "Registered tunnel connection" | tail -n 4 || echo "Warning: Could not find registered connections"
+        '
+    - name: Check tunnel health
+      run: "echo \"=== Tunnel Logs (last 20 lines) ===\"\ndocker logs cloudflared\
+        \ --tail 20 2>&1 || true\n\necho \"\"\necho \"=== Checking for active connections\
+        \ ===\"\ndocker logs cloudflared 2>&1 | grep \"Registered tunnel connection\"\
+        \ | tail -n 4 || echo \"Warning: Could not find registered connections\"\n\
+        \necho \"\"\necho \"=== Verifying tunnel UUID ===\"\nTUNNEL_UUID=$(docker\
+        \ logs cloudflared 2>&1 | grep \"Starting tunnel\" | grep -oP 'tunnelID=\\\
+        K[a-f0-9-]+' | tail -n 1)\necho \"Current tunnel: $TUNNEL_UUID\"\n\nif [ \"\
+        $TUNNEL_UUID\" != \"08d5feee-f504-47a2-a1f2-b86564900991\" ]; then\n  echo\
+        \ \"\u274C ERROR: Wrong tunnel UUID! Expected 08d5feee-f504-47a2-a1f2-b86564900991\"\
+        \n  exit 1\nfi\n\necho \"\u2705 Correct tunnel UUID\"\n"
+    - name: Check public portfolio site
+      run: "set -e\necho \"=== Testing www.leoklemet.com ===\"\ncode=$(curl -sS -o\
+        \ /dev/null -w \"%{http_code}\" https://www.leoklemet.com)\necho \"Response\
+        \ code: $code\"\n\nif [ \"$code\" != \"200\" ]; then\n  echo \"\u274C ERROR:\
+        \ Portfolio site not returning 200\"\n  exit 1\nfi\n\necho \"\u2705 www.leoklemet.com\
+        \ is healthy\"\n"
+    - name: Check public API health
+      run: "set -e\necho \"=== Testing api.leoklemet.com/ready ===\"\n\nresponse=$(curl\
+        \ -sS https://api.leoklemet.com/ready)\ncode=$(curl -sS -o /dev/null -w \"\
+        %{http_code}\" https://api.leoklemet.com/ready)\n\necho \"Response code: $code\"\
+        \necho \"Response body: $response\"\n\nif [ \"$code\" != \"200\" ]; then\n\
+        \  echo \"\u274C ERROR: API health check not returning 200\"\n  exit 1\nfi\n\
+        \n# Verify response contains expected structure\nif ! echo \"$response\" |\
+        \ grep -q '\"ok\":true'; then\n  echo \"\u274C ERROR: API response missing\
+        \ 'ok:true'\"\n  exit 1\nfi\n\necho \"\u2705 api.leoklemet.com/ready is healthy\"\
+        \n"
+    - name: debug-api
+      if: always()
+      run: 'echo "=== docker ps ==="
 
-          echo ""
-          echo "=== Verifying tunnel UUID ==="
-          TUNNEL_UUID=$(docker logs cloudflared 2>&1 | grep "Starting tunnel" | grep -oP 'tunnelID=\K[a-f0-9-]+' | tail -n 1)
-          echo "Current tunnel: $TUNNEL_UUID"
+        docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
-          if [ "$TUNNEL_UUID" != "08d5feee-f504-47a2-a1f2-b86564900991" ]; then
-            echo "❌ ERROR: Wrong tunnel UUID! Expected 08d5feee-f504-47a2-a1f2-b86564900991"
-            exit 1
-          fi
 
-          echo "✅ Correct tunnel UUID"
+        echo ""
 
-      - name: Check public portfolio site
-        run: |
-          set -e
-          echo "=== Testing www.leoklemet.com ==="
-          code=$(curl -sS -o /dev/null -w "%{http_code}" https://www.leoklemet.com)
-          echo "Response code: $code"
+        echo "=== portfolio-backend logs (if exists) ==="
 
-          if [ "$code" != "200" ]; then
-            echo "❌ ERROR: Portfolio site not returning 200"
-            exit 1
-          fi
+        docker logs portfolio-backend --tail 80 || echo "no portfolio-backend container"
 
-          echo "✅ www.leoklemet.com is healthy"
 
-      - name: Check public API health
-        run: |
-          set -e
-          echo "=== Testing api.leoklemet.com/ready ==="
+        echo ""
 
-          response=$(curl -sS https://api.leoklemet.com/ready)
-          code=$(curl -sS -o /dev/null -w "%{http_code}" https://api.leoklemet.com/ready)
+        echo "=== portfolio-api logs (if exists) ==="
 
-          echo "Response code: $code"
-          echo "Response body: $response"
+        docker logs portfolio-api --tail 80 || echo "no portfolio-api container"
 
-          if [ "$code" != "200" ]; then
-            echo "❌ ERROR: API health check not returning 200"
-            exit 1
-          fi
 
-          # Verify response contains expected structure
-          if ! echo "$response" | grep -q '"ok":true'; then
-            echo "❌ ERROR: API response missing 'ok:true'"
-            exit 1
-          fi
+        echo ""
 
-          echo "✅ api.leoklemet.com/ready is healthy"
+        echo "=== portfolio-nginx logs (if exists) ==="
 
-      - name: debug-api
-        if: always()
-        run: |
-          echo "=== docker ps ==="
-          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+        docker logs portfolio-nginx --tail 80 || echo "no portfolio-nginx container"
 
-          echo ""
-          echo "=== portfolio-backend logs (if exists) ==="
-          docker logs portfolio-backend --tail 80 || echo "no portfolio-backend container"
 
-          echo ""
-          echo "=== portfolio-api logs (if exists) ==="
-          docker logs portfolio-api --tail 80 || echo "no portfolio-api container"
+        echo ""
 
-          echo ""
-          echo "=== portfolio-nginx logs (if exists) ==="
-          docker logs portfolio-nginx --tail 80 || echo "no portfolio-nginx container"
+        echo "=== internal curl to portfolio-api.int:8000/ready ==="
 
-          echo ""
-          echo "=== internal curl to portfolio-api.int:8000/ready ==="
-          curl -s -o /dev/null -w "internal_api %{http_code}\n" http://portfolio-api.int:8000/ready || echo "internal_api curl failed"
+        curl -s -o /dev/null -w "internal_api %{http_code}\n" http://portfolio-api.int:8000/ready
+        || echo "internal_api curl failed"
 
-          echo ""
-          echo "=== internal curl to nginx if it fronts the api ==="
-          curl -s -o /dev/null -w "nginx_api %{http_code}\n" http://portfolio-nginx/ready || echo "nginx_api curl failed"
 
-      - name: attempt-self-heal
-        if: failure()
-        run: |
-          echo "api.leoklemet.com/ready was NOT healthy. Attempting scoped restart..."
+        echo ""
 
-          echo ""
-          echo "=== docker compose ps BEFORE ==="
-          docker compose -f docker-compose.prod.yml ps || echo "docker-compose.prod.yml not found, checking deploy/"
+        echo "=== internal curl to nginx if it fronts the api ==="
 
-          echo ""
-          echo "=== restarting portfolio-api / portfolio-backend ==="
-          docker compose -f deploy/docker-compose.portfolio-prod.yml restart portfolio-backend || true
-          docker compose -f deploy/docker-compose.portfolio-prod.yml restart portfolio-api || true
+        curl -s -o /dev/null -w "nginx_api %{http_code}\n" http://portfolio-nginx/ready
+        || echo "nginx_api curl failed"
 
-          echo ""
-          echo "sleeping 5s before recheck..."
-          sleep 5
+        '
+    - name: attempt-self-heal
+      if: failure()
+      run: 'echo "api.leoklemet.com/ready was NOT healthy. Attempting scoped restart..."
 
-          echo ""
-          echo "=== docker compose ps AFTER ==="
-          docker compose -f deploy/docker-compose.portfolio-prod.yml ps || true
 
-          echo ""
-          echo "=== post-restart internal readiness check ==="
-          curl -s -o /dev/null -w "post_restart %{http_code}\n" http://portfolio-api.int:8000/ready || echo "post-restart curl failed"
+        echo ""
 
-      - name: Check network connectivity
-        run: |
-          echo "=== Checking infra_net network ==="
-          docker network inspect infra_net --format '{{range .Containers}}{{println .Name}}{{end}}' | head -n 20
+        echo "=== docker compose ps BEFORE ==="
 
-          echo ""
-          echo "=== Verifying key containers on infra_net ==="
+        docker compose -f docker-compose.prod.yml ps || echo "docker-compose.prod.yml
+        not found, checking deploy/"
 
-          REQUIRED_CONTAINERS=("cloudflared" "portfolio-nginx" "portfolio-backend")
 
-          for container in "${REQUIRED_CONTAINERS[@]}"; do
-            if docker network inspect infra_net --format '{{range .Containers}}{{println .Name}}{{end}}' | grep -q "^$container\$"; then
-              echo "✅ $container is on infra_net"
-            else
-              echo "❌ WARNING: $container not found on infra_net"
-            fi
-          done
+        echo ""
 
-      - name: Verify apex domain redirect
-        run: |
-          set -e
-          echo "=== Testing leoklemet.com (apex) ==="
-          code=$(curl -sS -o /dev/null -w "%{http_code}" https://leoklemet.com)
-          echo "Response code: $code"
+        echo "=== restarting portfolio-api / portfolio-backend ==="
 
-          # Accept 200 or 301/302 (redirect to www)
-          if [ "$code" != "200" ] && [ "$code" != "301" ] && [ "$code" != "302" ]; then
-            echo "❌ ERROR: Apex domain not returning 200/301/302"
-            exit 1
-          fi
+        docker compose -f deploy/docker-compose.portfolio-prod.yml restart portfolio-backend
+        || true
 
-          echo "✅ leoklemet.com is accessible (code: $code)"
+        docker compose -f deploy/docker-compose.portfolio-prod.yml restart portfolio-api
+        || true
 
-      - name: Final summary
-        run: |
-          echo ""
-          echo "================================================"
-          echo "✅ Infrastructure Smoke Test PASSED"
-          echo "================================================"
-          echo ""
-          echo "Verified:"
-          echo "  • Cloudflare tunnel active (08d5feee-f504-47a2-a1f2-b86564900991)"
-          echo "  • 4 tunnel connections registered"
-          echo "  • www.leoklemet.com → 200 OK"
-          echo "  • leoklemet.com → accessible"
-          echo "  • api.leoklemet.com/ready → 200 OK"
-          echo "  • infra_net network healthy"
-          echo ""
-          echo "All production domains operational! 🚀"
+
+        echo ""
+
+        echo "sleeping 5s before recheck..."
+
+        sleep 5
+
+
+        echo ""
+
+        echo "=== docker compose ps AFTER ==="
+
+        docker compose -f deploy/docker-compose.portfolio-prod.yml ps || true
+
+
+        echo ""
+
+        echo "=== post-restart internal readiness check ==="
+
+        curl -s -o /dev/null -w "post_restart %{http_code}\n" http://portfolio-api.int:8000/ready
+        || echo "post-restart curl failed"
+
+        '
+    - name: Check network connectivity
+      run: "echo \"=== Checking infra_net network ===\"\ndocker network inspect infra_net\
+        \ --format '{{range .Containers}}{{println .Name}}{{end}}' | head -n 20\n\n\
+        echo \"\"\necho \"=== Verifying key containers on infra_net ===\"\n\nREQUIRED_CONTAINERS=(\"\
+        cloudflared\" \"portfolio-nginx\" \"portfolio-backend\")\n\nfor container\
+        \ in \"${REQUIRED_CONTAINERS[@]}\"; do\n  if docker network inspect infra_net\
+        \ --format '{{range .Containers}}{{println .Name}}{{end}}' | grep -q \"^$container\\\
+        $\"; then\n    echo \"\u2705 $container is on infra_net\"\n  else\n    echo\
+        \ \"\u274C WARNING: $container not found on infra_net\"\n  fi\ndone\n"
+    - name: Verify apex domain redirect
+      run: "set -e\necho \"=== Testing leoklemet.com (apex) ===\"\ncode=$(curl -sS\
+        \ -o /dev/null -w \"%{http_code}\" https://leoklemet.com)\necho \"Response\
+        \ code: $code\"\n\n# Accept 200 or 301/302 (redirect to www)\nif [ \"$code\"\
+        \ != \"200\" ] && [ \"$code\" != \"301\" ] && [ \"$code\" != \"302\" ]; then\n\
+        \  echo \"\u274C ERROR: Apex domain not returning 200/301/302\"\n  exit 1\n\
+        fi\n\necho \"\u2705 leoklemet.com is accessible (code: $code)\"\n"
+    - name: Final summary
+      run: "echo \"\"\necho \"================================================\"\n\
+        echo \"\u2705 Infrastructure Smoke Test PASSED\"\necho \"================================================\"\
+        \necho \"\"\necho \"Verified:\"\necho \"  \u2022 Cloudflare tunnel active\
+        \ (08d5feee-f504-47a2-a1f2-b86564900991)\"\necho \"  \u2022 4 tunnel connections\
+        \ registered\"\necho \"  \u2022 www.leoklemet.com \u2192 200 OK\"\necho \"\
+        \  \u2022 leoklemet.com \u2192 accessible\"\necho \"  \u2022 api.leoklemet.com/ready\
+        \ \u2192 200 OK\"\necho \"  \u2022 infra_net network healthy\"\necho \"\"\n\
+        echo \"All production domains operational! \U0001F680\"\n"
